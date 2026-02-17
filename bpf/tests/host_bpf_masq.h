@@ -181,6 +181,8 @@ int host_bpf_masq_v6_1_udp_check(const struct __ctx_buff *ctx)
 
 	assert(ct_entry->packets == 1);
 
+	endpoint_v6_del_entry((union v6addr *)NODE_IP_V6);
+
 	test_finish();
 }
 
@@ -654,6 +656,8 @@ int host_bpf_masq_v6_5_no_snat_ep_udp_check(const struct __ctx_buff *ctx)
 		assert(!memcmp(&ip6->saddr, expected_v6_pod_one, 16));
 	}
 
+	endpoint_v6_del_entry((union v6addr *)v6_pod_one);
+
 	test_finish();
 }
 
@@ -771,6 +775,8 @@ int host_bpf_masq_v6_6_snat_ep_udp_check(const struct __ctx_buff *ctx)
 
 		assert(!memcmp(&ip6->saddr, expected_node_ip_v6, 16));
 	}
+
+	endpoint_v6_del_entry((union v6addr *)v6_pod_one);
 
 	test_finish();
 }
