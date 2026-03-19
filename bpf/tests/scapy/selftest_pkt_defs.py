@@ -28,18 +28,18 @@ sst_rep_pad = (
 assert len(bytes(sst_rep_pad)) == (len(bytes(sst_rep)) + 8)
 
 # Testing large packets
-sst_lpkt = (
+sst_large = (
     Ether(dst=mac_one, src=mac_two) /
     IP() /
     TCP() /
     Raw(load='S'*970)
 )
-assert len(bytes(sst_lpkt)) == 1024
+assert len(bytes(sst_large)) == 1024
 
-sst_xlpkt = (
+sst_xl = (
     Ether(dst=mac_one, src=mac_two) /
     IP() /
     TCP() /
     Raw(load='S'*1464)
 )
-assert len(bytes(sst_xlpkt)) == 1518
+assert len(bytes(sst_xl)) == 1518
