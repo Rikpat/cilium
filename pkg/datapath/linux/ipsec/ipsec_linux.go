@@ -62,8 +62,8 @@ const (
 	offsetEncKey   = 4
 	maxOffset      = offsetEncKey
 
-	defaultDropPriority      = 100
 	oldXFRMOutPolicyPriority = 50
+	defaultDropPriority      = 100
 
 	// The request ID which signifies all Cilium managed policies and states.
 	AllReqID = 0
