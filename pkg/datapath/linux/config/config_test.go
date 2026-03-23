@@ -469,6 +469,111 @@ func TestPrivilegedNewHeaderfileWriter(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestPrivilegedWriteNodeConfigPartialAddr(t *testing.T) {
+	testutils.PrivilegedTest(t)
+	ns := netns.NewNetNS(t)
+	setupCiliumDummyDevices(t, ns)
+	err := ns.Do(func() error {
+		setupConfigSuite(t)
+
+		cfg, err := NewHeaderfileWriter(WriterParams{
+			NodeAddressing: fakeTypes.NewNodeAddressing(),
+			Sysctl:         sysctl.NewDirectSysctl(afero.NewOsFs(), "/proc"),
+			NodeMap:        fake.NewFakeNodeMapV2(),
+		})
+		require.NoError(t, err)
+
+		tests := []struct {
+			name    string
+			addrs   []tables.DeviceAddress
+			wantErr bool
+		}{
+			{
+				name: "both addresses",
+				addrs: []tables.DeviceAddress{
+					{Addr: ipv4DummyAddr},
+					{Addr: ipv6DummyAddr},
+				},
+			},
+			{
+				name: "only IPv4",
+				addrs: []tables.DeviceAddress{
+					{Addr: ipv4DummyAddr},
+				},
+			},
+			{
+				name: "only IPv6",
+				addrs: []tables.DeviceAddress{
+					{Addr: ipv6DummyAddr},
+				},
+			},
+			{
+				name:    "no addresses",
+				addrs:   nil,
+				wantErr: true,
+			},
+			{
+				name: "only unspecified IPv4",
+				addrs: []tables.DeviceAddress{
+					{Addr: netip.MustParseAddr("0.0.0.0")},
+				},
+				wantErr: true,
+			},
+			{
+				name: "only unspecified IPv6",
+				addrs: []tables.DeviceAddress{
+					{Addr: netip.MustParseAddr("::")},
+				},
+				wantErr: true,
+			},
+			{
+				name: "both unspecified",
+				addrs: []tables.DeviceAddress{
+					{Addr: netip.MustParseAddr("0.0.0.0")},
+					{Addr: netip.MustParseAddr("::")},
+				},
+				wantErr: true,
+			},
+			{
+				name: "valid IPv4 and unspecified IPv6",
+				addrs: []tables.DeviceAddress{
+					{Addr: ipv4DummyAddr},
+					{Addr: netip.MustParseAddr("::")},
+				},
+			},
+			{
+				name: "unspecified IPv4 and valid IPv6",
+				addrs: []tables.DeviceAddress{
+					{Addr: netip.MustParseAddr("0.0.0.0")},
+					{Addr: ipv6DummyAddr},
+				},
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				nodeCfg := dummyNodeCfg
+				nodeCfg.DirectRoutingDevice = &tables.Device{
+					Name:  "eth0",
+					Index: 2,
+					Addrs: tt.addrs,
+				}
+
+				var buf bytes.Buffer
+				err := cfg.WriteNodeConfig(&buf, &nodeCfg)
+				if tt.wantErr {
+					require.Error(t, err)
+				} else {
+					require.NoError(t, err)
+				}
+			})
+		}
+
+		return nil
+	})
+	require.NoError(t, err)
+}
+
 var provideNodemap = cell.Provide(func() nodemap.MapV2 {
 	return fake.NewFakeNodeMapV2()
 })

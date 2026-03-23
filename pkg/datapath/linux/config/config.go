@@ -381,6 +381,7 @@ func (h *HeaderfileWriter) WriteNodeConfig(w io.Writer, cfg *datapath.LocalNodeC
 	// See orchestrator/localnodeconfig.go
 	drd := cfg.DirectRoutingDevice
 	if drd != nil {
+		var hasAddr bool
 		if option.Config.EnableIPv4 {
 			var ipv4 uint32
 			for _, addr := range drd.Addrs {
@@ -389,18 +390,21 @@ func (h *HeaderfileWriter) WriteNodeConfig(w io.Writer, cfg *datapath.LocalNodeC
 					break
 				}
 			}
-			if ipv4 == 0 {
-				return fmt.Errorf("IPv4 direct routing device IP not found")
+			if ipv4 != 0 {
+				hasAddr = true
 			}
 			cDefinesMap["IPV4_DIRECT_ROUTING"] = fmt.Sprintf("%d", ipv4)
 		}
 		if option.Config.EnableIPv6 {
 			ip := preferredIPv6Address(drd.Addrs)
-			if ip.IsUnspecified() {
-				return fmt.Errorf("IPv6 direct routing device IP not found")
+			if ip.IsValid() && !ip.IsUnspecified() {
+				hasAddr = true
 			}
 			extraMacrosMap["IPV6_DIRECT_ROUTING"] = ip.String()
 			fw.WriteString(FmtDefineAddress("IPV6_DIRECT_ROUTING", ip.AsSlice()))
+		}
+		if !hasAddr {
+			return fmt.Errorf("direct routing device %s has no addresses", drd.Name)
 		}
 	} else {
 		var directRoutingIPv6 net.IP
