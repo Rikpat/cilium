@@ -150,6 +150,46 @@ func WithStreamIdleTimeout(streamIdleTimeoutSeconds int) ListenerMutator {
 	}
 }
 
+func withForwardClientCertDetails(m *model.Model) ListenerMutator {
+	for _, l := range m.GetListeners() {
+		for k, v := range l.GetAnnotations() {
+			fmt.Printf("listener %s: annotation %s: %s", l, k, v)
+		}
+	}
+	forwardClientCertDetailsString := "ALWAYS_FORWARD_ONLY" // temporary
+	var forwardClietCertDetails httpConnectionManagerv3.HttpConnectionManager_ForwardClientCertDetails
+	switch forwardClientCertDetailsString {
+		case "SANITIZE": forwardClietCertDetails = httpConnectionManagerv3.HttpConnectionManager_SANITIZE
+		case "FORWARD_ONLY": forwardClietCertDetails = httpConnectionManagerv3.HttpConnectionManager_FORWARD_ONLY
+		case "APPEND_FORWARD": forwardClietCertDetails = httpConnectionManagerv3.HttpConnectionManager_APPEND_FORWARD
+		case "SANITIZE_SET": forwardClietCertDetails = httpConnectionManagerv3.HttpConnectionManager_SANITIZE_SET
+		case "ALWAYS_FORWARD_ONLY": forwardClietCertDetails = httpConnectionManagerv3.HttpConnectionManager_ALWAYS_FORWARD_ONLY
+		default: return listener
+	}
+	return func(listener *envoy_config_listener.Listener) *envoy_config_listener.Listener {
+		for _, filterChain := range listener.FilterChains {
+			for _, filter := range filterChain.Filters {
+				if filter.Name == httpConnectionManagerType {
+					tc := filter.GetTypedConfig()
+					switch tc.GetTypeUrl() {
+					case envoy.HttpConnectionManagerTypeURL:
+						hcm, err := tc.UnmarshalNew()
+						if err != nil {
+							continue
+						}
+						hcmConfig, ok := hcm.(*httpConnectionManagerv3.HttpConnectionManager)
+						if !ok {
+							continue
+						}
+						hcmConfig.ForwardClientCertDetails = forwardClietCertDetails
+					}
+				}
+			}
+		}
+		return listener
+	}
+}
+
 func withHostNetworkPort(m *model.Model, ipv4Enabled bool, ipv6Enabled bool) ListenerMutator {
 	return func(listener *envoy_config_listener.Listener) *envoy_config_listener.Listener {
 		listener.Address, listener.AdditionalAddresses = getHostNetworkListenerAddresses(m.AllPorts(), ipv4Enabled, ipv6Enabled)
@@ -271,6 +311,7 @@ func (i *cecTranslator) listenerMutators(m *model.Model) []ListenerMutator {
 			defaultTCPKeepAliveIdleTimeInSeconds,
 			defaultTCPKeepAliveProbeIntervalInSeconds,
 			defaultTCPKeepAliveMaxFailures),
+		withForwardClientCertDetails(m),
 	}
 	if i.Config.ListenerConfig.UseProxyProtocol {
 		res = append(res, withProxyProtocol())
@@ -291,6 +332,8 @@ func (i *cecTranslator) listenerMutators(m *model.Model) []ListenerMutator {
 	if i.Config.OriginalIPDetectionConfig.XFFNumTrustedHops > 0 {
 		res = append(res, withXffNumTrustedHops(i.Config.OriginalIPDetectionConfig.XFFNumTrustedHops))
 	}
+
+	
 	return res
 }
 
