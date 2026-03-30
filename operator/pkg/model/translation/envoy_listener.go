@@ -150,6 +150,55 @@ func WithStreamIdleTimeout(streamIdleTimeoutSeconds int) ListenerMutator {
 	}
 }
 
+func withForwardClientCertDetails(m *model.Model) ListenerMutator {
+	return func(listener *envoy_config_listener.Listener) *envoy_config_listener.Listener {
+		// All listeners should have the same annotations as they are coming from the same gateway
+		annotations := m.GetListeners()[0].GetAnnotations()
+		forwardClientCertDetailsString, ok := annotations["cec.cilium.io/forward-client-cert-details"]
+		if !ok {
+			return listener
+		}
+		var forwardClientCertDetails httpConnectionManagerv3.HttpConnectionManager_ForwardClientCertDetails
+		switch forwardClientCertDetailsString {
+		case "SANITIZE":
+			forwardClientCertDetails = httpConnectionManagerv3.HttpConnectionManager_SANITIZE
+		case "FORWARD_ONLY":
+			forwardClientCertDetails = httpConnectionManagerv3.HttpConnectionManager_FORWARD_ONLY
+		case "APPEND_FORWARD":
+			forwardClientCertDetails = httpConnectionManagerv3.HttpConnectionManager_APPEND_FORWARD
+		case "SANITIZE_SET":
+			forwardClientCertDetails = httpConnectionManagerv3.HttpConnectionManager_SANITIZE_SET
+		case "ALWAYS_FORWARD_ONLY":
+			forwardClientCertDetails = httpConnectionManagerv3.HttpConnectionManager_ALWAYS_FORWARD_ONLY
+		default:
+			return listener
+		}
+		for _, filterChain := range listener.FilterChains {
+			for _, filter := range filterChain.Filters {
+				if filter.Name == httpConnectionManagerType {
+					tc := filter.GetTypedConfig()
+					switch tc.GetTypeUrl() {
+					case envoy.HttpConnectionManagerTypeURL:
+						hcm, err := tc.UnmarshalNew()
+						if err != nil {
+							continue
+						}
+						hcmConfig, ok := hcm.(*httpConnectionManagerv3.HttpConnectionManager)
+						if !ok {
+							continue
+						}
+						hcmConfig.ForwardClientCertDetails = forwardClientCertDetails
+						filter.ConfigType = &envoy_config_listener.Filter_TypedConfig{
+							TypedConfig: toAny(hcmConfig),
+						}
+					}
+				}
+			}
+		}
+		return listener
+	}
+}
+
 func withHostNetworkPort(m *model.Model, ipv4Enabled bool, ipv6Enabled bool) ListenerMutator {
 	return func(listener *envoy_config_listener.Listener) *envoy_config_listener.Listener {
 		listener.Address, listener.AdditionalAddresses = getHostNetworkListenerAddresses(m.AllPorts(), ipv4Enabled, ipv6Enabled)
@@ -271,6 +320,7 @@ func (i *cecTranslator) listenerMutators(m *model.Model) []ListenerMutator {
 			defaultTCPKeepAliveIdleTimeInSeconds,
 			defaultTCPKeepAliveProbeIntervalInSeconds,
 			defaultTCPKeepAliveMaxFailures),
+		withForwardClientCertDetails(m),
 	}
 	if i.Config.ListenerConfig.UseProxyProtocol {
 		res = append(res, withProxyProtocol())
