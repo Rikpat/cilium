@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"maps"
 	goslices "slices"
+	"strings"
 	"syscall"
 
 	envoy_config_core_v3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
@@ -20,6 +21,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	"github.com/cilium/cilium/operator/pkg/model"
 	"github.com/cilium/cilium/pkg/envoy"
@@ -158,20 +160,21 @@ func withForwardClientCertDetails(m *model.Model) ListenerMutator {
 		if !ok {
 			return listener
 		}
-		var forwardClientCertDetails httpConnectionManagerv3.HttpConnectionManager_ForwardClientCertDetails
-		switch forwardClientCertDetailsString {
-		case "SANITIZE":
-			forwardClientCertDetails = httpConnectionManagerv3.HttpConnectionManager_SANITIZE
-		case "FORWARD_ONLY":
-			forwardClientCertDetails = httpConnectionManagerv3.HttpConnectionManager_FORWARD_ONLY
-		case "APPEND_FORWARD":
-			forwardClientCertDetails = httpConnectionManagerv3.HttpConnectionManager_APPEND_FORWARD
-		case "SANITIZE_SET":
-			forwardClientCertDetails = httpConnectionManagerv3.HttpConnectionManager_SANITIZE_SET
-		case "ALWAYS_FORWARD_ONLY":
-			forwardClientCertDetails = httpConnectionManagerv3.HttpConnectionManager_ALWAYS_FORWARD_ONLY
-		default:
+		forwardClientCertDetails, ok := httpConnectionManagerv3.HttpConnectionManager_ForwardClientCertDetails_value[forwardClientCertDetailsString]
+		if !ok {
 			return listener
+		}
+		setCurrentClientCertDetailsString, ok := annotations["cec.cilium.io/set-current-client-cert-details"]
+		var setCurrentClientCertDetails httpConnectionManagerv3.HttpConnectionManager_SetCurrentClientCertDetails
+		if ok {
+			certDetails := strings.Split(setCurrentClientCertDetailsString, ",")
+			setCurrentClientCertDetails = httpConnectionManagerv3.HttpConnectionManager_SetCurrentClientCertDetails{
+				Subject: wrapperspb.Bool(goslices.Contains(certDetails, "subject")),
+				Cert:    goslices.Contains(certDetails, "cert"),
+				Chain:   goslices.Contains(certDetails, "chain"),
+				Dns:     goslices.Contains(certDetails, "dns"),
+				Uri:     goslices.Contains(certDetails, "uri"),
+			}
 		}
 		for _, filterChain := range listener.FilterChains {
 			for _, filter := range filterChain.Filters {
@@ -187,7 +190,8 @@ func withForwardClientCertDetails(m *model.Model) ListenerMutator {
 						if !ok {
 							continue
 						}
-						hcmConfig.ForwardClientCertDetails = forwardClientCertDetails
+						hcmConfig.ForwardClientCertDetails = httpConnectionManagerv3.HttpConnectionManager_ForwardClientCertDetails(forwardClientCertDetails)
+						hcmConfig.SetCurrentClientCertDetails = &setCurrentClientCertDetails
 						filter.ConfigType = &envoy_config_listener.Filter_TypedConfig{
 							TypedConfig: toAny(hcmConfig),
 						}
